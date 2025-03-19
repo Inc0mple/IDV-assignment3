@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>HDB Resale Price Visualization</title>
+  <!-- ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <!-- D3 for CSV loading -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --primary-color: #3498db;
+      --primary-dark: #2980b9;
+      --accent-color: #2ecc71;
+      --accent-dark: #27ae60;
+      --text-color: #333;
+      --light-bg: #f8f9fa;
+      --border-radius: 8px;
+      --box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      --transition: all 0.3s ease;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f7fa;
+      color: var(--text-color);
+      line-height: 1.5;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background-color: #fff;
+      padding: 25px;
+      border-radius: var(--border-radius);
+      box-shadow: var(--box-shadow);
+    }
+
+    /* Hypothesis section */
+    .hypothesis-section {
+      background-color: var(--light-bg);
+      border-radius: var(--border-radius);
+      padding: 15px 20px;
+      margin-bottom: 25px;
+      box-shadow: var(--box-shadow);
+    }
+    .hypothesis-section h2 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      color: var(--primary-dark);
+    }
+    .hypothesis-section p {
+      margin: 10px 0;
+      line-height: 1.6;
+      color: #444;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 25px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+    .header h1 {
+      margin: 0;
+      color: var(--primary-dark);
+      font-size: 2.2rem;
+    }
+    .header p {
+      color: #666;
+      margin-top: 8px;
+      font-size: 1.1rem;
+    }
+    
+    .main-content {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    
+    .visualization {
+      flex: 1 1 70%;
+      min-width: 600px;
+      position: relative;
+      border-radius: var(--border-radius);
+      overflow: hidden;
+      box-shadow: var(--box-shadow);
+    }
+    
+    .controls-panel {
+      flex: 1 1 25%;
+      min-width: 250px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    
+    .year-control, .filters-section {
+      background-color: var(--light-bg);
+      border-radius: var(--border-radius);
+      padding: 20px;
+      box-shadow: var(--box-shadow);
+    }
+    
+    .year-control h3, .filters-section h3 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      color: var(--primary-dark);
+      font-size: 1.2rem;
+      border-bottom: 2px solid var(--primary-color);
+      padding-bottom: 8px;
+    }
+    
+    .slider-container {
+      margin-bottom: 15px;
+    }
+    
+    #year-value {
+      font-weight: bold;
+      color: var(--primary-dark);
+      font-size: 1.3rem;
+    }
+    
+    #year-slider {
+      width: 100%;
+      margin: 10px 0;
+      height: 7px;
+      -webkit-appearance: none;
+      background: #ddd;
+      border-radius: 5px;
+      outline: none;
+    }
+    #year-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    #year-slider::-webkit-slider-thumb:hover {
+      background: var(--primary-dark);
+      transform: scale(1.1);
+    }
+    
+    .filter-group {
+      margin-bottom: 15px;
+    }
+    .filter-group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .filter-group-header h4 {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--text-color);
+    }
+    .filter-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+      max-height: 160px;
+      overflow-y: auto;
+      padding: 5px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      margin: 0;
+    }
+    .checkbox-item input[type="checkbox"] {
+      margin-right: 6px;
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent-color);
+    }
+    .checkbox-item label {
+      cursor: pointer;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    button {
+      padding: 6px 12px;
+      background-color: var(--accent-color);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: bold;
+      transition: var(--transition);
+    }
+    button:hover {
+      background-color: var(--accent-dark);
+    }
+    
+    #play-button {
+      width: 100%;
+      padding: 10px;
+      font-size: 1rem;
+      margin-top: 5px;
+      background-color: var(--primary-color);
+    }
+    #play-button:hover {
+      background-color: var(--primary-dark);
+    }
+    .btn-small {
+      padding: 4px 8px;
+      font-size: 0.75rem;
+    }
+    
+    /* Scatter/regression chart container */
+    #chart {
+      width: 100%;
+      height: 550px;
+      background-color: white;
+    }
+    /* The line chart container below scatter plot */
+    #lineChart {
+      width: 100%;
+      height: 300px;
+      background-color: white;
+      margin-top: 20px;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 50px;
+      font-size: 18px;
+      color: #666;
+      background-color: #f8f8f8;
+      border-radius: var(--border-radius);
+    }
+    
+    /* Custom scrollbar */
+    .checkbox-grid::-webkit-scrollbar {
+      width: 8px;
+    }
+    .checkbox-grid::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+    .checkbox-grid::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 4px;
+    }
+    .checkbox-grid::-webkit-scrollbar-thumb:hover {
+      background: #aaa;
+    }
+    
+    @media (max-width: 900px) {
+      .main-content {
+        flex-direction: column;
+      }
+      .visualization, .controls-panel {
+        min-width: 100%;
+      }
+      #chart {
+        height: 400px;
+      }
+      #lineChart {
+        height: 250px;
+      }
+    }
+
+    /* Container for polynomial equation display */
+    .polynomial-display {
+      margin-top: 0px;
+      font-size: 1rem;
+      color: #444;
+      background-color: var(--light-bg);
+      padding: 15px;
+      border-radius: var(--border-radius);
+      box-shadow: var(--box-shadow);
+    }
+    .polynomial-display h4 {
+      margin-top: 0;
+      color: var(--primary-dark);
+      font-size: 1rem;
+    }
+    .polynomial-display p {
+      margin: 5px 0;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>HDB Resale Price Visualization</h1>
+    <p>Explore Singapore's HDB resale flat prices from 1990 to present</p>
+  </div>
+  <!-- Hypothesis Section -->
+  <div class="hypothesis-section">
+    <h2>Hypothesis & Findings</h2>
+
+    <div class="hypothesis">
+        <p>
+            <strong>Hypothesis 1</strong>: The average resale price of HDB flats varies distinctly
+             by flat type over the years.
+        </p>
+    </div>
+
+    <div class="hypothesis">
+        <p>
+            <strong>Hypothesis 2</strong>: There is a polynomial relationship between floor area,
+            remaining lease duration, flat type, and resale price.
+            Specifically, we expect larger floor areas and longer remaining leases to
+            positively correlate with higher resale prices across different flat types.
+        </p>
+    </div>
+
+    <div class="findings">
+        <p>
+            <strong>Findings</strong>: The interactive visualisation indicates clear patterns supporting the hypothesis.
+            Average resale prices vary significantly by flat type, with larger units 
+            (e.g., Executive and Multi-Generation flats) generally commanding higher prices.
+            Additionally, we observed a strong positive correlation between floor area and resale price.
+            Flats with longer remaining lease durations also tend to fetch higher resale values.
+        </p>
+    </div>
+</div>
+
+  <div class="main-content">
+    <!-- VISUALIZATION (Scatter + Regression + below line chart) -->
+    <div class="visualization">
+        <!-- The line chart for average resale price by year -->
+      <div id="lineChart" style="display:none;"></div>
+      <!-- The scatter/regression chart -->
+      <div id="loading" class="loading">
+        <div>Loading data...</div>
+      </div>
+      <div id="chart" style="display:none;"></div>
+
+      <!-- Polynomial Equation Display -->
+      <div id="polynomial-equation" class="polynomial-display" style="display:none;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <h4 style="margin: 0; flex-shrink: 0; margin-right: 15px;">Polynomial Regression Equation:</h4>
+          <p id="equation-text" style="margin: 0; flex-grow: 1;"></p>
+        </div>
+      </div>
+
+      
+    </div>
+
+    <!-- RIGHT-SIDE CONTROLS -->
+    <div class="controls-panel">
+      
+      <!-- Year controls -->
+      <div class="year-control">
+        <h3>Time Period</h3>
+        <div class="slider-container">
+          <div>Year: <span id="year-value">2000</span></div>
+          <input type="range" id="year-slider" min="1990" max="2025" step="1" value="2000">
+          <button id="play-button">▶ Play Animation</button>
+        </div>
+
+        <!-- Polynomial Degree Selection -->
+        <div style="margin-top: 10px;">
+          <label for="poly-degree" style="font-weight:bold;">
+            Polynomial Degree:
+          </label>
+          <select id="poly-degree" style="width: 100%; padding:5px; margin-top:4px;">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Filters Panel -->
+      <div class="filters-section">
+        <h3>Filters</h3>
+        
+        <!-- Flat Type Filter -->
+        <div class="filter-group">
+          <div class="filter-group-header">
+            <h4>Flat Type</h4>
+            <div class="filter-actions">
+              <button id="select-all-flat-types" class="btn-small">All</button>
+              <button id="clear-all-flat-types" class="btn-small">None</button>
+            </div>
+          </div>
+          <div id="flat-type-filters" class="checkbox-grid"></div>
+        </div>
+        
+        <!-- Town Filter -->
+        <div class="filter-group">
+          <div class="filter-group-header">
+            <h4>Town</h4>
+            <div class="filter-actions">
+              <button id="select-all-towns" class="btn-small">All</button>
+              <button id="clear-all-towns" class="btn-small">None</button>
+            </div>
+          </div>
+          <div id="town-filters" class="checkbox-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --------------------------
+// Global Variables
+// --------------------------
+let data = [];
+let dataByYear = new Map(); // year -> array of rows
+let currentYear = 2000;
+let isPlaying = false;
+let playInterval = null;
+
+
+const xVar = 'floor_area_sqm';
+const yVar = 'resale_price';
+const colorVar = 'remaining_lease_year'; // for coloring scatter
+
+let globalExtents = {
+  floor_area_sqm: null,
+  resale_price: null
+};
+
+const filters = {
+  towns: new Set(),
+  flatTypes: new Set()
+};
+
+// Generate SVG paths from D3 symbols
+const symbolGenerator = d3.symbol();
+const generatePath = (symbolType, size = 100) => {
+  symbolGenerator.type(symbolType).size(size);
+  return symbolGenerator();
+};
+
+// Create your custom symbols using D3 symbol paths
+const flatTypeShapes = {
+  '1 ROOM': 'path://' + generatePath(d3.symbolCircle),
+  '2 ROOM': 'path://' + generatePath(d3.symbolSquare), 
+  '3 ROOM': 'path://' + generatePath(d3.symbolTriangle),
+  '4 ROOM': 'path://' + generatePath(d3.symbolDiamond),
+  '5 ROOM': 'path://' + generatePath(d3.symbolStar),
+  'EXECUTIVE': 'path://' + generatePath(d3.symbolCross),
+  'MULTI-GENERATION': 'path://' + generatePath(d3.symbolWye)
+};
+
+// ECharts
+let chart;     // scatter + regression
+let lineChart; // average price over time
+
+// --------------------------
+// Load Data
+// --------------------------
+d3.csv('data/combined_hdb_resale_data_filtered.csv').then(csvData => {
+  data = csvData.map(d => ({
+    ...d,
+    year: +d.year,
+    month_num: +d.month_num,
+    floor_area_sqm: +d.floor_area_sqm,
+    lease_commence_date: +d.lease_commence_date,
+    remaining_lease_year: +d.remaining_lease_year,
+    resale_price: +d.resale_price
+  }));
+
+  console.log(`Loaded ${data.length} rows`);
+
+  // Build year->rows cache
+  const grouped = d3.group(data, row => row.year);
+  grouped.forEach((arr, yr) => {
+    dataByYear.set(+yr, arr);
+  });
+
+  // Global extents
+  const faExtent = d3.extent(data, d => d.floor_area_sqm);
+  const rpExtent = d3.extent(data, d => d.resale_price);
+  globalExtents.floor_area_sqm = faExtent;
+  globalExtents.resale_price = rpExtent;
+
+  initFilters();
+  initChart();
+  initLineChart();
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('chart').style.display = 'block';
+  document.getElementById('lineChart').style.display = 'block';
+
+  updateChart();
+  setupEventListeners();
+
+}).catch(err => {
+  console.error('Error loading CSV:', err);
+  document.getElementById('loading').textContent = 'Error loading data. Check console.';
+});
+
+// --------------------------
+// Initialize & Populate Filters
+// --------------------------
+function initFilters() {
+  const towns = [...new Set(data.map(d => d.town))].sort();
+  const flatTypes = [...new Set(data.map(d => d.flat_type))].sort();
+
+  towns.forEach(t => filters.towns.add(t));
+  flatTypes.forEach(f => filters.flatTypes.add(f));
+
+  populateCheckboxes('town-filters', towns, 'town');
+  populateCheckboxes('flat-type-filters', flatTypes, 'flat-type');
+}
+
+function populateCheckboxes(containerId, items, filterType) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  items.forEach(item => {
+    const checkboxDiv = document.createElement('div');
+    checkboxDiv.className = 'checkbox-item';
+    
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = `${filterType}-${item.replace(/\s+/g, '-').toLowerCase()}`;
+    cb.value = item;
+    cb.checked = true;
+    cb.dataset.filterType = filterType;
+    cb.addEventListener('change', () => {
+      updateFilterState(cb);
+    });
+    
+    const label = document.createElement('label');
+    label.htmlFor = cb.id;
+    label.textContent = item;
+    
+    checkboxDiv.appendChild(cb);
+    checkboxDiv.appendChild(label);
+    container.appendChild(checkboxDiv);
+  });
+}
+
+function updateFilterState(checkbox) {
+  const { value } = checkbox;
+  const type = checkbox.dataset.filterType;
+  if (type === 'town') {
+    checkbox.checked ? filters.towns.add(value) : filters.towns.delete(value);
+  } else if (type === 'flat-type') {
+    checkbox.checked ? filters.flatTypes.add(value) : filters.flatTypes.delete(value);
+  }
+  updateChart();
+}
+
+function selectAll(filterType, isSelected) {
+  const cbs = document.querySelectorAll(`input[data-filter-type="${filterType}"]`);
+  cbs.forEach(cb => {
+    cb.checked = isSelected;
+    updateFilterState(cb);
+  });
+}
+
+// --------------------------
+// Scatter Chart
+// --------------------------
+function initChart() {
+  chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
+
+  // Create empty series for each type
+  const ftSeries = Object.keys(flatTypeShapes).map(ft => ({
+    name: ft,
+    type: 'scatter',
+    symbol: flatTypeShapes[ft],
+    symbolSize: 10,
+    data: [],
+    itemStyle: {
+      color: 'transparent',
+      borderWidth: 1,
+      borderColor: '#333',
+      opacity: 0.7
+    },
+    emphasis: {
+      itemStyle: {
+        borderWidth: 2,
+        borderColor: '#000',
+        shadowBlur: 10,
+        shadowColor: 'rgba(0,0,0,0.5)'
+      }
+    }
+  }));
+
+  const option = {
+    title: {
+      text: 'HDB Resale Prices',
+      left: 'center',
+      textStyle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#2c3e50'
+      }
+    },
+    grid: {
+      left: '5%',
+      right: '5%',
+      top: '10%',
+      bottom: '10%',
+      containLabel: true
+    },
+    tooltip: {
+      trigger: 'item',
+      formatter: scatterTooltip
+    },
+    
+    
+    legend: {
+      top: '5%',
+      type: 'scroll',
+      selectedMode: false,
+      data: Object.keys(flatTypeShapes),
+      textStyle: { color: '#333' },
+      inactiveColor: '#ccc'
+    },
+    xAxis: {
+      name: 'Floor Area (sqm)',
+      nameLocation: 'middle',
+      nameGap: 30,
+      nameTextStyle: { fontSize:14, fontWeight:'bold' },
+      min: globalExtents.floor_area_sqm[0],
+      max: globalExtents.floor_area_sqm[1],
+      axisLine: { lineStyle:{ color:'#666' }},
+      splitLine: { lineStyle:{ color:'#eee' }}
+    },
+    yAxis: {
+      name: 'Resale Price (SGD)',
+      nameLocation: 'middle',
+      // Increase nameGap so label doesn't overlap tick labels
+      nameGap: 60,
+      nameTextStyle: { fontSize:14, fontWeight:'bold' },
+      min: globalExtents.resale_price[0],
+      max: globalExtents.resale_price[1],
+      axisLine: { lineStyle:{ color:'#666' }},
+      splitLine: { lineStyle:{ color:'#eee' }}
+    },
+    visualMap: {
+      show: true,
+      dimension: 2,
+      min: d3.min(data, d => d.remaining_lease_year),
+      max: d3.max(data, d => d.remaining_lease_year),
+      calculable: true,
+      inRange: {
+        color: ['#e74c3c', '#f39c12', '#2ecc71', '#27ae60']
+      },
+      text: ['Long Lease','Short Lease'],
+      textStyle: { color: '#333' },
+      left: 'right',
+      top: 'top',
+      orient: 'vertical',
+      itemHeight: 200
+    },
+    series: [
+      ...ftSeries,
+      {
+        name: 'Regression',
+        type: 'line',
+        data: [],
+        symbolSize: 0,
+        showSymbol: false,
+        smooth: false,
+        lineStyle: {
+          color: '#34495e',
+          width: 2,
+          shadowBlur: 2,
+          shadowColor: 'rgba(0,0,0,0.2)'
+        },
+        visualMap: false
+      }
+    ]
+  };
+  chart.setOption(option);
+  window.addEventListener('resize', () => chart.resize());
+}
+
+function scatterTooltip(params) {
+  if (params.seriesName==='Regression'){
+    const [xx, yy] = params.data;
+    return `
+      <strong>Trend Line</strong><br/>
+      Floor Area: ${xx.toFixed(1)}<br/>
+      Predicted Price: $${Math.round(yy).toLocaleString()}
+    `;
+  } else {
+    const d = params.data;
+    // [floor_area, resale_price, remain_lease, resale_price, town, flatType, year]
+    return `
+      <strong>${d[5]} in ${d[4]}</strong><br/>
+      Floor Area: ${d[0]} sqm<br/>
+      Remaining Lease: ${d[2]} yrs<br/>
+      Resale Price: $${d[3].toLocaleString()}<br/>
+      Year: ${d[6]}
+    `;
+  }
+}
+
+// --------------------------
+// Line Chart
+// --------------------------
+function initLineChart() {
+  lineChart = echarts.init(document.getElementById('lineChart'));
+  const option = {
+    title: {
+      text: 'Average Resale Price by Flat Type (All Years)',
+      left: 'center',
+      textStyle: { fontSize:16, color:'#2c3e50' }
+    },
+    tooltip: {
+        trigger:'axis',
+        // We'll format the price values with 2 decimals, commas, and a $ sign
+        formatter: function(params) {
+          // 'params' is an array of series data at the same x (year)
+          let tooltipStr= `<strong>Year: ${params[0].name}</strong><br/>`;
+          params.forEach(p => {
+            if(p.value==null) return; // no data
+            let priceVal= p.value.toLocaleString('en-US',
+              { minimumFractionDigits:2, maximumFractionDigits:2 }
+            );
+            tooltipStr += `
+              ${p.marker} ${p.seriesName}: $${priceVal}<br/>
+            `;
+          });
+          return tooltipStr;
+        }
+      },
+    grid: {
+      left: '5%',
+      right: '10%',
+      top: '15%',
+      bottom: '10%',
+      containLabel: true
+    },
+    legend: {
+      top: '5%',
+      type: 'scroll',
+      textStyle: { color:'#333' },
+      selectedMode: true
+    },
+    xAxis: {
+      type: 'category',
+      name: 'Year',
+      nameLocation: 'middle',
+      nameGap: 35,
+      nameTextStyle: { fontSize:14, fontWeight:'bold' },
+      axisLine: { lineStyle:{ color:'#666' }},
+      axisLabel: { rotate:45 },
+      splitLine: { show:false }
+    },
+    yAxis: {
+      type:'value',
+      name: 'Avg Resale Price (SGD)',
+      nameLocation:'middle',
+      // Increase nameGap so label doesn't overlap tick labels
+      nameGap: 60,
+      nameTextStyle: { fontSize:14, fontWeight:'bold' },
+      axisLine: { lineStyle:{ color:'#666' }},
+      splitLine: { lineStyle:{ color:'#eee' }}
+    },
+    series: []
+  };
+  lineChart.setOption(option);
+  window.addEventListener('resize', () => lineChart.resize());
+}
+
+
+// --------------------------
+// Master Update
+// --------------------------
+function updateChart() {
+  updateScatterChart();
+  updateLineChart();
+}
+
+// --------------------------
+// Update Scatter
+// --------------------------
+function updateScatterChart() {
+  const yearData = dataByYear.get(currentYear) || [];
+  const filtered = yearData.filter(d =>
+    filters.towns.has(d.town) && filters.flatTypes.has(d.flat_type)
+  );
+
+  // Group by flat type
+  const grouped = d3.group(filtered, d => d.flat_type);
+  const finalSeries = Object.keys(flatTypeShapes).map(ft => {
+    const items = grouped.get(ft) || [];
+    const points = items.map(d => [
+      d.floor_area_sqm,
+      d.resale_price,
+      d.remaining_lease_year,
+      d.resale_price,
+      d.town,
+      d.flat_type,
+      d.year
+    ]);
+    return { name: ft, data: points };
+  });
+
+  // Polynomial
+  const allScatterData = filtered.map(d=>[
+    d.floor_area_sqm, d.resale_price, d.remaining_lease_year,
+    d.resale_price, d.town, d.flat_type, d.year
+  ]);
+  const degree = +document.getElementById('poly-degree').value;
+  let regPoints = [];
+  let coefs=null;
+  if(allScatterData.length>degree){
+    const xy= allScatterData.map(dd=>[dd[0], dd[1]]);
+    coefs= fitPolynomial(xy, degree);
+    const [minX,maxX]= globalExtents.floor_area_sqm;
+    const stepCount=100;
+    const step=(maxX-minX)/(stepCount-1);
+    for(let i=0;i<stepCount;i++){
+      const xVal=minX+step*i;
+      const yPred=evaluatePolynomial(coefs,xVal);
+      regPoints.push([xVal,yPred]);
+    }
+  }
+  finalSeries.push({ name:'Regression', data: regPoints });
+
+  chart.setOption({
+    title:{ text:`HDB Resale Prices in ${currentYear}` },
+    series: finalSeries
+  });
+  chart.resize();
+
+  // Show polynomial eq
+  const eqDiv=document.getElementById('polynomial-equation');
+  const eqText=document.getElementById('equation-text');
+  if(coefs){
+    eqDiv.style.display='block';
+    const terms= coefs.map((c,i)=>{
+      const cc= c.toFixed(3);
+      if(i===0)return cc;
+      else if(i===1)return `${cc}·x`;
+      return `${cc}·x^${i}`;
+    });
+    eqText.textContent= `y = ${terms.join(' + ')}`;
+  } else {
+    eqDiv.style.display='none';
+  }
+}
+
+// --------------------------
+// Update Line Chart
+// --------------------------
+function updateLineChart() {
+  // 1) Filter data for the TOWNS + FLAT TYPES selected
+  //    We'll build lines for each selected flat type
+  const filteredAll= data.filter(d=>
+    filters.towns.has(d.town) && filters.flatTypes.has(d.flat_type)
+  );
+  // group => (flat_type, year)
+  const nested= d3.group(filteredAll, d=>d.flat_type, d=>d.year);
+
+  const usedFlatTypes= [...filters.flatTypes].sort();
+  const allYears= [...new Set(data.map(d=>d.year))].sort((a,b)=>a-b);
+
+  // We'll create a 'matrix' for each ft => an array of the same length as allYears, 
+  // each index is the avg or null
+  const lineData={};
+  usedFlatTypes.forEach(ft=>{
+    lineData[ft]= new Array(allYears.length).fill(null);
+  });
+
+  // fill lineData
+  nested.forEach((byYear, ft)=>{
+    if(!usedFlatTypes.includes(ft))return;
+    byYear.forEach((arr, yr)=>{
+      const idx= allYears.indexOf(yr);
+      if(idx>=0){
+        const avg= d3.mean(arr, d=> d.resale_price);
+        lineData[ft][idx]= avg;
+      }
+    });
+  });
+
+  // Build line series for each usedFlatTypes
+  // We'll set each line's symbol to the same shape as the scatter, showSymbol: true
+  const lineSeries= usedFlatTypes.map(ft=>({
+    name: ft,
+    type: 'line',
+    showSymbol: true,
+    symbol: flatTypeShapes[ft],
+    symbolSize: 8,
+    data: lineData[ft]
+  }));
+
+  // Markline for current year
+  const minYear= allYears[0];
+  const maxYear= allYears[allYears.length-1];
+  let highlightYear= currentYear;
+  if(highlightYear<minYear) highlightYear=minYear;
+  if(highlightYear>maxYear) highlightYear=maxYear;
+
+  const markLineOption= {
+    symbol:['none','none'],
+    label:{ show:true, formatter:`Year ${highlightYear}` },
+    lineStyle:{ color:'red', type:'dashed' },
+    data: [{ xAxis: highlightYear }]
+  };
+
+  // update lineChart
+  lineChart.setOption({
+    title:{ text:'Average Resale Price by Flat Type (All Years)' },
+    xAxis:{ data: allYears },
+    series: lineSeries
+  });
+
+  // attach markLine to each series
+  const newSeries= lineSeries.map(s=>({
+    ...s,
+    markLine:{ ...markLineOption }
+  }));
+  lineChart.setOption({ series:newSeries });
+
+  lineChart.resize();
+}
+
+// --------------------------
+// Polynomial
+// --------------------------
+function fitPolynomial(xyArray, degree=2) {
+  const n=xyArray.length;
+  const d=degree;
+  if(n<d+1) return null;
+  const M= Array(n).fill(null).map(()=>Array(d+1).fill(0));
+  const Y= Array(n).fill(0);
+
+  for(let i=0;i<n;i++){
+    const [xx,yy]=xyArray[i];
+    Y[i]=yy;
+    let power=1;
+    for(let j=0;j<=d;j++){
+      M[i][j]=power;
+      power*=xx;
+    }
+  }
+
+  const MT=transpose(M);
+  const MTM=multiply(MT,M);
+  const MTY=multiplyVec(MT,Y);
+  const C=solve(MTM,MTY);
+  return C;
+}
+
+function evaluatePolynomial(coefs,xVal){
+  if(!coefs) return null;
+  let res=0, pow=1;
+  for(let i=0;i<coefs.length;i++){
+    res+= coefs[i]*pow;
+    pow*= xVal;
+  }
+  return res;
+}
+
+// Minimal linear algebra
+function transpose(mat){
+  const rows= mat.length; 
+  const cols= mat[0].length;
+  const out= Array(cols).fill(null).map(()=>Array(rows));
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      out[c][r]=mat[r][c];
+    }
+  }
+  return out;
+}
+function multiply(A,B){
+  const m=A.length,n=A[0].length,p=B[0].length;
+  const result= Array(m).fill(null).map(()=>Array(p).fill(0));
+  for(let i=0;i<m;i++){
+    for(let j=0;j<p;j++){
+      let sum=0;
+      for(let k=0;k<n;k++){
+        sum+= A[i][k]* B[k][j];
+      }
+      result[i][j]=sum;
+    }
+  }
+  return result;
+}
+function multiplyVec(A,v){
+  const m=A.length,n=A[0].length;
+  const out= Array(m).fill(0);
+  for(let i=0;i<m;i++){
+    let sum=0;
+    for(let j=0;j<n;j++){
+      sum+= A[i][j]*v[j];
+    }
+    out[i]=sum;
+  }
+  return out;
+}
+function solve(A,b){
+  const n=A.length;
+  const M=A.map(r=>r.slice());
+  const bb=b.slice();
+
+  for(let i=0;i<n;i++){
+    // pivot
+    let maxRow=i; let maxVal=Math.abs(M[i][i]);
+    for(let r=i+1;r<n;r++){
+      const val=Math.abs(M[r][i]);
+      if(val>maxVal){maxVal=val;maxRow=r;}
+    }
+    if(maxRow!==i){
+      [M[i],M[maxRow]]=[M[maxRow],M[i]];
+      [bb[i],bb[maxRow]]=[bb[maxRow],bb[i]];
+    }
+    for(let r=i+1;r<n;r++){
+      const ratio=M[r][i]/M[i][i];
+      for(let c=i;c<n;c++){
+        M[r][c]-= ratio*M[i][c];
+      }
+      bb[r]-= ratio*bb[i];
+    }
+  }
+  const x= Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){
+    let sum= bb[i];
+    for(let c=i+1;c<n;c++){
+      sum-= M[i][c]* x[c];
+    }
+    x[i]= sum/M[i][i];
+  }
+  return x;
+}
+
+// --------------------------
+// Event Listeners
+// --------------------------
+function setupEventListeners() {
+  const slider= document.getElementById('year-slider');
+  const yearValue= document.getElementById('year-value');
+  slider.addEventListener('input', function(){
+    currentYear= +this.value;
+    yearValue.textContent= currentYear;
+    updateChart();
+  });
+
+  const playBtn= document.getElementById('play-button');
+  playBtn.addEventListener('click',()=>{
+    if(isPlaying){
+      clearInterval(playInterval);
+      isPlaying=false;
+      playBtn.textContent='▶ Play Animation';
+    } else{
+      isPlaying=true;
+      playBtn.textContent='⏸ Pause Animation';
+      const minYr= +slider.min;
+      const maxYr= +slider.max;
+      playInterval= setInterval(()=>{
+        if(currentYear>=maxYr) {
+          currentYear=minYr;
+        } else {
+          currentYear++;
+        }
+        slider.value=currentYear;
+        yearValue.textContent=currentYear;
+        updateChart();
+      },800);
+    }
+  });
+
+  document.getElementById('poly-degree').addEventListener('change',()=>{
+    updateChart();
+  });
+
+  document.getElementById('select-all-flat-types')
+    .addEventListener('click',()=> selectAll('flat-type',true));
+  document.getElementById('clear-all-flat-types')
+    .addEventListener('click',()=> selectAll('flat-type',false));
+
+  document.getElementById('select-all-towns')
+    .addEventListener('click',()=> selectAll('town',true));
+  document.getElementById('clear-all-towns')
+    .addEventListener('click',()=> selectAll('town',false));
+}
+</script>
+</body>
+</html>

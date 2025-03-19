@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HDB Resale Price Visualization (ECharts)</title>
+
+  <!-- ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <!-- Use D3 just for CSV loading -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f0f0f0;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Top bar for filters */
+    .filters-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      background-color: #f9f9f9;
+      border-radius: 5px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    .filter-group {
+      margin-right: 40px;
+      margin-bottom: 10px;
+    }
+    .filter-group h3 {
+      margin-top: 0;
+    }
+    .checkbox-group {
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+
+    /* Main content area: chart on the left, controls on the right */
+    .main-content {
+      display: flex;
+      flex-wrap: nowrap;
+    }
+    .visualization {
+      flex: 1 1 auto;
+      min-width: 600px;
+      margin-right: 20px;
+      position: relative;
+    }
+    .controls {
+      flex: 0 0 300px;
+    }
+
+    .year-mode-controls, .axis-controls, .slider-container {
+      margin-bottom: 20px;
+      padding: 15px;
+      background-color: #f9f9f9;
+      border-radius: 5px;
+    }
+
+    #chart {
+      width: 100%;
+      height: 700px;
+    }
+    .loading {
+      text-align: center;
+      padding: 50px;
+      font-size: 18px;
+    }
+
+    label {
+      display: block;
+      margin: 5px 0;
+      cursor: pointer;
+    }
+    input[type="radio"], input[type="checkbox"] {
+      margin-right: 5px;
+      cursor: pointer;
+    }
+    button {
+      padding: 8px 12px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px 5px 0 0;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #year-value {
+      font-weight: bold;
+    }
+
+    /* Prediction panel */
+    .prediction-panel {
+      background-color: #eef;
+      border-radius: 5px;
+      padding: 10px;
+      margin-top: 20px;
+    }
+    .prediction-panel input {
+      margin: 5px 0;
+      display: block;
+      width: 70%;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1 style="text-align:center;">HDB Resale Price Interactive Visualization</h1>
+  <p style="text-align:center;">Explore Singapore's HDB resale flat prices from 1990 to present</p>
+
+  <!-- 1) Filters Bar at the top -->
+  <div class="filters-bar">
+    <!-- Flat Type Filter -->
+    <div class="filter-group">
+      <h3>Flat Type</h3>
+      <div id="flat-type-filters" class="checkbox-group"></div>
+      <button id="select-all-flat-types">Select All</button>
+      <button id="clear-all-flat-types">Clear All</button>
+    </div>
+
+    <!-- Town Filter -->
+    <div class="filter-group">
+      <h3>Town</h3>
+      <div id="town-filters" class="checkbox-group"></div>
+      <button id="select-all-towns">Select All</button>
+      <button id="clear-all-towns">Clear All</button>
+    </div>
+
+    <!-- Storey Filter -->
+    <div class="filter-group">
+      <h3>Storey Range</h3>
+      <div id="storey-filters" class="checkbox-group"></div>
+      <button id="select-all-storeys">Select All</button>
+      <button id="clear-all-storeys">Clear All</button>
+    </div>
+  </div>
+
+  <!-- 2) Main content: chart left, controls right -->
+  <div class="main-content">
+    <div class="visualization">
+      <div id="loading" class="loading">Loading data...</div>
+      <div id="chart" style="display:none;"></div>
+    </div>
+
+    <!-- Right-side controls: year mode, axis, slider, prediction -->
+    <div class="controls">
+      <div class="year-mode-controls">
+        <h2>Year Mode</h2>
+        <p>Choose how “year” is used: as the slider or on an axis.</p>
+        <label>
+          <input type="radio" name="year-mode" value="slider" checked />
+          Year is controlled by slider
+        </label>
+        <label>
+          <input type="radio" name="year-mode" value="x-axis" />
+          Year on X-axis
+        </label>
+        <label>
+          <input type="radio" name="year-mode" value="y-axis" />
+          Year on Y-axis
+        </label>
+      </div>
+
+      <div class="axis-controls">
+        <h2>Axis Settings</h2>
+        <h3>X-axis</h3>
+        <div id="x-axis-options"></div>
+
+        <h3>Y-axis</h3>
+        <div id="y-axis-options"></div>
+      </div>
+
+      <div class="slider-container" id="slider-container">
+        <h3>Year: <span id="year-value">2000</span></h3>
+        <input type="range" id="year-slider" min="1990" max="2025" value="2000" step="1"/>
+        <button id="play-button">▶ Play Timeline</button>
+      </div>
+
+      <div class="prediction-panel">
+        <h2>Predict Price (Naive)</h2>
+        <p>Enter approximate parameters; we filter dataset for matching town & flat type,
+           then filter floor_area & remaining_lease within ±10% to compute mean & median price.</p>
+        <label>Floor Area (sqm): <input type="number" id="predict-floor-area" /></label>
+        <label>Remaining Lease (years): <input type="number" id="predict-lease-years" /></label>
+        <label>Town: <input type="text" id="predict-town" /></label>
+        <label>Flat Type: <input type="text" id="predict-flat-type" /></label>
+        <button id="predict-button">Predict Price</button>
+        <div id="predict-result"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // -------------------------------
+  // Global Variables & Data Cache
+  // -------------------------------
+  let data = [];
+  let dataByYear = new Map(); // year -> array of rows for that year
+
+  // Axis variables
+  let xAxisVar = 'floor_area_sqm';
+  let yAxisVar = 'resale_price';
+
+  let sliderDimension = 'year'; // when "year-mode" = slider
+  let currentYear = 2000;
+  let isPlaying = false;
+  let playInterval = null;
+
+  // Filters
+  const filters = {
+    towns: new Set(),
+    flatTypes: new Set(),
+    storeyRanges: new Set()
+  };
+
+  // For global fixed axis ranges
+  const numericDimensions = [
+    'floor_area_sqm',
+    'remaining_lease_year',
+    'resale_price',
+    'year'
+  ];
+  const globalExtents = {};
+
+  // ECharts instance
+  let chart;
+
+  // -------------------------------
+  // Data Loading
+  // -------------------------------
+  d3.csv("data/combined_hdb_resale_data.csv").then(csvData => {
+    data = csvData.map(d => ({
+      ...d,
+      year: +d.year,
+      month_num: +d.month_num,
+      floor_area_sqm: +d.floor_area_sqm,
+      lease_commence_date: +d.lease_commence_date,
+      remaining_lease_year: +d.remaining_lease_year,
+      resale_price: +d.resale_price
+    }));
+
+    console.log(`Loaded ${data.length} rows`);
+
+    // Precompute global min/max for each numeric dimension
+    numericDimensions.forEach(dim => {
+      const [minVal, maxVal] = d3.extent(data, d => +d[dim]);
+      globalExtents[dim] = { min: minVal, max: maxVal };
+    });
+
+    // Build a year->array cache for faster filtering when "year" is on the slider
+    const grouped = d3.group(data, row => row.year);
+    grouped.forEach((arr, yr) => {
+      dataByYear.set(+yr, arr);
+    });
+
+    initializeFilters();
+    initializeYearModeOptions();
+    initChart();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('chart').style.display = 'block';
+
+    updateAxisRadioButtons();
+    updateChart();
+    setupEventListeners();
+  }).catch(err => {
+    console.error('Error loading CSV:', err);
+    document.getElementById('loading').textContent = 'Error loading data. Check console.';
+  });
+
+  // -------------------------------
+  // Filter Initialization
+  // -------------------------------
+  function initializeFilters() {
+    const towns = [...new Set(data.map(d => d.town))].sort();
+    const flatTypes = [...new Set(data.map(d => d.flat_type))].sort();
+    const storeyRanges = [...new Set(data.map(d => d.storey_range))].sort();
+
+    towns.forEach(t => filters.towns.add(t));
+    flatTypes.forEach(f => filters.flatTypes.add(f));
+    storeyRanges.forEach(s => filters.storeyRanges.add(s));
+
+    populateCheckboxes('town-filters', towns, 'town');
+    populateCheckboxes('flat-type-filters', flatTypes, 'flat-type');
+    populateCheckboxes('storey-filters', storeyRanges, 'storey');
+  }
+
+  function populateCheckboxes(containerId, items, type) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    items.forEach(item => {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = item;
+      cb.checked = true;
+      cb.dataset.filterType = type;
+
+      cb.addEventListener('change', () => {
+        updateFiltersState(cb);
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + item));
+      container.appendChild(label);
+    });
+  }
+
+  function updateFiltersState(checkbox) {
+    const { value } = checkbox;
+    const type = checkbox.dataset.filterType;
+    if (type === 'town') {
+      checkbox.checked ? filters.towns.add(value) : filters.towns.delete(value);
+    } else if (type === 'flat-type') {
+      checkbox.checked ? filters.flatTypes.add(value) : filters.flatTypes.delete(value);
+    } else if (type === 'storey') {
+      checkbox.checked ? filters.storeyRanges.add(value) : filters.storeyRanges.delete(value);
+    }
+    updateChart();
+  }
+
+  function selectAll(type, isSelected) {
+    const checkboxes = document.querySelectorAll(`input[data-filter-type="${type}"]`);
+    checkboxes.forEach(cb => {
+      cb.checked = isSelected;
+      updateFiltersState(cb);
+    });
+  }
+
+  // -------------------------------
+  // Year Mode
+  // -------------------------------
+  function initializeYearModeOptions() {
+    document.querySelectorAll('input[name="year-mode"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        const mode = this.value;
+        sliderDimension = (mode === 'slider') ? 'year' : null;
+        const sliderContainer = document.getElementById('slider-container');
+        if (mode === 'slider') {
+          sliderContainer.style.display = 'block';
+          // If either axis was 'year', revert them
+          if (xAxisVar === 'year') xAxisVar = 'floor_area_sqm';
+          if (yAxisVar === 'year') yAxisVar = 'resale_price';
+        } else {
+          // Hide slider
+          sliderContainer.style.display = 'none';
+          // If "x-axis", then xAxisVar=year, ensure y not year
+          // If "y-axis", then yAxisVar=year, ensure x not year
+          if (mode === 'x-axis') {
+            xAxisVar = 'year';
+            if (yAxisVar === 'year') yAxisVar = 'resale_price';
+          } else if (mode === 'y-axis') {
+            yAxisVar = 'year';
+            if (xAxisVar === 'year') xAxisVar = 'floor_area_sqm';
+          }
+        }
+        updateAxisRadioButtons();
+        updateChart();
+      });
+    });
+  }
+
+  function getYearMode() {
+    return document.querySelector('input[name="year-mode"]:checked').value;
+  }
+
+  // -------------------------------
+  // Axis Radio Buttons
+  // -------------------------------
+  function updateAxisRadioButtons() {
+    // Potential numeric dims: floor_area_sqm, remaining_lease_year, resale_price
+    // plus 'year' if mode != 'slider'
+    const mode = getYearMode();
+    let dimsForAxis = ['floor_area_sqm','remaining_lease_year','resale_price'];
+
+    const xContainer = document.getElementById('x-axis-options');
+    const yContainer = document.getElementById('y-axis-options');
+    xContainer.innerHTML = '';
+    yContainer.innerHTML = '';
+
+    // If year is not in slider mode, year must go on one axis
+    // But to avoid confusion, let's handle it more simply:
+    // "x-axis" => x must be year
+    // "y-axis" => y must be year
+    // If mode=slider => year not in the axis list
+    if (mode === 'slider') {
+      // do not add 'year'
+    } else if (mode === 'x-axis') {
+      dimsForAxis = ['year'];
+    } else if (mode === 'y-axis') {
+      dimsForAxis = ['year'];
+    }
+
+    // Build x-axis radio group
+    dimsForAxis.forEach(dim => {
+      const label = document.createElement('label');
+      const rb = document.createElement('input');
+      rb.type = 'radio';
+      rb.name = 'x-axis-var';
+      rb.value = dim;
+      rb.checked = (xAxisVar === dim);
+      rb.addEventListener('change', () => {
+        xAxisVar = rb.value;
+        updateChart();
+      });
+      label.appendChild(rb);
+      label.appendChild(document.createTextNode(' ' + dim));
+      xContainer.appendChild(label);
+    });
+
+    // Build y-axis radio group
+    dimsForAxis.forEach(dim => {
+      const label = document.createElement('label');
+      const rb = document.createElement('input');
+      rb.type = 'radio';
+      rb.name = 'y-axis-var';
+      rb.value = dim;
+      rb.checked = (yAxisVar === dim);
+      rb.addEventListener('change', () => {
+        yAxisVar = rb.value;
+        updateChart();
+      });
+      label.appendChild(rb);
+      label.appendChild(document.createTextNode(' ' + dim));
+      yContainer.appendChild(label);
+    });
+  }
+
+  // -------------------------------
+  // Initialize ECharts
+  // -------------------------------
+  function initChart() {
+    chart = echarts.init(document.getElementById('chart'), null, {
+      renderer: 'canvas'
+    });
+    const option = {
+      title: {
+        text: 'HDB Resale Prices',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'item',
+        formatter: (params) => {
+          const d = params.data;
+          // data format: [xVal, yVal, remainingLease, resale, town, flatType, storeyRange, year]
+          return `
+            <strong>Town:</strong> ${d[4]}<br/>
+            <strong>Flat Type:</strong> ${d[5]}<br/>
+            <strong>Storey:</strong> ${d[6]}<br/>
+            <strong>Floor Area:</strong> ${d[1]} sqm<br/>
+            <strong>Remaining Lease:</strong> ${d[2]} yrs<br/>
+            <strong>Price:</strong> $${Number(d[3]).toLocaleString()}<br/>
+            <strong>Year:</strong> ${d[7]}
+          `;
+        }
+      },
+      animationDuration: 600,
+      animationEasing: 'cubicOut',
+      xAxis: {
+        name: '',
+        nameLocation: 'middle',
+        nameGap: 30
+      },
+      yAxis: {
+        name: '',
+        nameLocation: 'middle',
+        nameGap: 40
+      },
+      visualMap: {
+        show: true,
+        dimension: 3, // resale_price is index 3
+        min: globalExtents.resale_price.min,
+        max: globalExtents.resale_price.max,
+        calculable: true,
+        inRange: {
+          color: ['red', 'green']
+        },
+        text: ['High Price','Low Price'],
+        textGap: 20,
+        left: 'right',
+        top: 'middle',
+        orient: 'vertical'
+      },
+      series: [
+        {
+          name: 'Resale Flats',
+          type: 'scatter',
+          symbolSize: 5,
+          data: [],
+          progressive: 5000,
+          emphasis: {
+            focus: 'series'
+          }
+        }
+      ]
+    };
+    chart.setOption(option);
+    window.addEventListener('resize', () => chart.resize());
+  }
+
+  // -------------------------------
+  // Updating the Chart
+  // -------------------------------
+  function updateChart() {
+    const mode = getYearMode();
+
+    let subset = data; // default: all data
+    if (mode === 'slider') {
+      // If user is controlling year via slider, we only look at that single year’s data
+      // from the cache (much faster than filtering the entire array).
+      subset = dataByYear.get(currentYear) || [];
+    }
+    // If mode = x-axis or y-axis => we keep all years, no year-based filtering.
+
+    // Filter further by Town/FlatType/Storey
+    const filteredData = subset.filter(d => {
+      const passTown = filters.towns.has(d.town);
+      const passFlat = filters.flatTypes.has(d.flat_type);
+      const passStorey = filters.storeyRanges.has(d.storey_range);
+      return passTown && passFlat && passStorey;
+    });
+
+    // Convert to ECharts data format:
+    // [ xVal, yVal, remaining_lease, resale_price, town, flatType, storey, year ]
+    const seriesData = filteredData.map(d => {
+      return [
+        +d[xAxisVar],
+        +d[yAxisVar],
+        +d.remaining_lease_year,
+        +d.resale_price,
+        d.town,
+        d.flat_type,
+        d.storey_range,
+        d.year
+      ];
+    });
+
+    // Force global min/max on axes
+    let xMin = globalExtents[xAxisVar].min;
+    let xMax = globalExtents[xAxisVar].max;
+    let yMin = globalExtents[yAxisVar].min;
+    let yMax = globalExtents[yAxisVar].max;
+
+    // Update chart
+    chart.setOption({
+      title: {
+        text: `HDB Resale Prices${mode==='slider' ? ' in ' + currentYear : ''}`
+      },
+      xAxis: {
+        name: getAxisLabel(xAxisVar),
+        min: xMin,
+        max: xMax
+      },
+      yAxis: {
+        name: getAxisLabel(yAxisVar),
+        min: yMin,
+        max: yMax
+      },
+      series: [{
+        data: seriesData
+      }]
+    });
+    chart.resize();
+  }
+
+  function getAxisLabel(variable) {
+    switch(variable) {
+      case 'floor_area_sqm':       return 'Floor Area (sqm)';
+      case 'remaining_lease_year': return 'Remaining Lease (years)';
+      case 'resale_price':         return 'Resale Price (SGD)';
+      case 'year':                 return 'Year';
+      default:                     return variable;
+    }
+  }
+
+  // -------------------------------
+  // Event Listeners
+  // -------------------------------
+  function setupEventListeners() {
+    // Year slider
+    const yearSlider = document.getElementById('year-slider');
+    const yearValue = document.getElementById('year-value');
+    yearSlider.addEventListener('input', function() {
+      currentYear = +this.value;
+      yearValue.textContent = currentYear;
+      updateChart();
+    });
+
+    // Play timeline
+    const playButton = document.getElementById('play-button');
+    playButton.addEventListener('click', () => {
+      if (isPlaying) {
+        clearInterval(playInterval);
+        playInterval = null;
+        isPlaying = false;
+        playButton.textContent = '▶ Play Timeline';
+      } else {
+        isPlaying = true;
+        playButton.textContent = '⏸ Pause';
+        const minYear = +yearSlider.min;
+        const maxYear = +yearSlider.max;
+        playInterval = setInterval(() => {
+          if (currentYear >= maxYear) {
+            currentYear = minYear;
+          } else {
+            currentYear++;
+          }
+          yearSlider.value = currentYear;
+          yearValue.textContent = currentYear;
+          updateChart();
+        }, 600); // speed
+      }
+    });
+
+    // Select/Clear all filters
+    document.getElementById('select-all-flat-types')
+      .addEventListener('click', () => selectAll('flat-type', true));
+    document.getElementById('clear-all-flat-types')
+      .addEventListener('click', () => selectAll('flat-type', false));
+    document.getElementById('select-all-towns')
+      .addEventListener('click', () => selectAll('town', true));
+    document.getElementById('clear-all-towns')
+      .addEventListener('click', () => selectAll('town', false));
+    document.getElementById('select-all-storeys')
+      .addEventListener('click', () => selectAll('storey', true));
+    document.getElementById('clear-all-storeys')
+      .addEventListener('click', () => selectAll('storey', false));
+
+    // Naive Prediction
+    document.getElementById('predict-button').addEventListener('click', () => {
+      const fa = +document.getElementById('predict-floor-area').value || 0;
+      const rl = +document.getElementById('predict-lease-years').value || 0;
+      const twn = (document.getElementById('predict-town').value||'').toUpperCase().trim();
+      const ft = (document.getElementById('predict-flat-type').value||'').toUpperCase().trim();
+
+      const predictResult = document.getElementById('predict-result');
+
+      if (!twn || !ft || fa<=0 || rl<=0) {
+        predictResult.textContent = 'Please provide valid inputs for all fields.';
+        return;
+      }
+
+      // 1) Filter dataset for matching town & flat type
+      // 2) Then filter for floor_area_sqm ~±10% of user input
+      // 3) Filter for remaining_lease_year ~±10% of user input
+      const lowerFa = fa * 0.9;
+      const upperFa = fa * 1.1;
+      const lowerRl = rl * 0.9;
+      const upperRl = rl * 1.1;
+
+      const candidates = data.filter(d => {
+        if (d.town !== twn) return false;
+        if (d.flat_type !== ft) return false;
+        if (d.floor_area_sqm < lowerFa || d.floor_area_sqm > upperFa) return false;
+        if (d.remaining_lease_year < lowerRl || d.remaining_lease_year > upperRl) return false;
+        return true;
+      });
+
+      if (candidates.length === 0) {
+        predictResult.textContent = 'No matching transactions found for these inputs.';
+        return;
+      }
+
+      // Compute mean & median from these candidates
+      const prices = candidates.map(c => c.resale_price).sort((a,b) => a-b);
+      const mean = prices.reduce((a,b) => a+b, 0) / prices.length;
+      let median;
+      const mid = Math.floor(prices.length/2);
+      if (prices.length % 2 === 0) {
+        median = (prices[mid-1] + prices[mid]) / 2;
+      } else {
+        median = prices[mid];
+      }
+
+      predictResult.innerHTML = `
+        Found <strong>${candidates.length}</strong> matching records.<br/>
+        Mean Price: $${mean.toLocaleString()}<br/>
+        Median Price: $${median.toLocaleString()}
+      `;
+    });
+  }
+</script>
+</body>
+</html>

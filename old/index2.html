@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>HDB Resale Price Visualization</title>
+  <!-- ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <!-- Use D3 only for CSV loading -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f0f0f0;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    /* Top bar with 'Predict Price' and Filters in a single row, wrapping as needed */
+    .top-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between; /* spread out horizontally */
+      gap: 20px;
+      margin-bottom: 20px;
+      background-color: #f9f9f9;
+      border-radius: 5px;
+      padding: 15px;
+    }
+    .predict-section, .filters-section {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .predict-section > div {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .predict-section h2 {
+      margin-top: 0;
+    }
+    .predict-inputs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+      align-items: flex-start;
+    }
+    .predict-inputs label {
+      display: flex;
+      flex-direction: column;
+      font-weight: bold;
+    }
+    .predict-inputs select, .predict-inputs input[type="number"] {
+      margin-top: 4px;
+      min-width: 120px;
+    }
+    #predict-button {
+      align-self: flex-end;
+      margin-top: auto;
+    }
+    #predict-result {
+      margin-top: 5px;
+    }
+
+    .filters-section h3 {
+      margin-top: 0;
+    }
+    .checkbox-group {
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+    label {
+      margin: 5px 0;
+      cursor: pointer;
+    }
+    input[type="checkbox"] {
+      margin-right: 5px;
+      cursor: pointer;
+    }
+    button {
+      padding: 8px 12px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+
+    .main-content {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 20px;
+    }
+    .visualization {
+      flex: 1 1 auto;
+      min-width: 600px;
+      position: relative;
+    }
+    #chart {
+      width: 100%;
+      height: 700px;
+    }
+    .controls {
+      width: 220px;
+      flex-shrink: 0;
+      background-color: #f9f9f9;
+      border-radius: 5px;
+      padding: 15px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 50px;
+      font-size: 18px;
+    }
+    .slider-container {
+      margin-bottom: 20px;
+    }
+    #year-value {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1 style="text-align:center;">HDB Resale Price Visualization</h1>
+  <p style="text-align:center;">Explore Singapore's HDB resale flat prices from 1990 to present</p>
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <!-- Predict Price Panel -->
+    <div class="predict-section">
+      <div>
+        <h2>Predict Price (Naive)</h2>
+        <div class="predict-inputs">
+          <!-- Town Dropdown -->
+          <label>
+            Town
+            <select id="predict-town"></select>
+          </label>
+          <!-- Flat Type Dropdown -->
+          <label>
+            Flat Type
+            <select id="predict-flat-type"></select>
+          </label>
+          <!-- Floor Area -->
+          <label>
+            Floor Area (sqm)
+            <input type="number" id="predict-floor-area" placeholder="e.g. 100"/>
+          </label>
+          <!-- Remaining Lease -->
+          <label>
+            Remaining Lease (years)
+            <input type="number" id="predict-lease-years" placeholder="e.g. 70"/>
+          </label>
+          <button id="predict-button">Predict</button>
+          <div id="predict-result"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-section">
+      <!-- Flat Type Filter -->
+      <div>
+        <h3>Flat Type</h3>
+        <div id="flat-type-filters" class="checkbox-group"></div>
+        <button id="select-all-flat-types">All</button>
+        <button id="clear-all-flat-types">None</button>
+      </div>
+      <!-- Town Filter -->
+      <div>
+        <h3>Town</h3>
+        <div id="town-filters" class="checkbox-group"></div>
+        <button id="select-all-towns">All</button>
+        <button id="clear-all-towns">None</button>
+      </div>
+      <!-- Storey Filter -->
+      <div>
+        <h3>Storey Range</h3>
+        <div id="storey-filters" class="checkbox-group"></div>
+        <button id="select-all-storeys">All</button>
+        <button id="clear-all-storeys">None</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <!-- CHART -->
+    <div class="visualization">
+      <div id="loading" class="loading">Loading data...</div>
+      <div id="chart" style="display:none;"></div>
+    </div>
+
+    <!-- RIGHT-SIDE CONTROLS -->
+    <div class="controls">
+      <div class="slider-container">
+        <h3>Year: <span id="year-value">2000</span></h3>
+        <input type="range" id="year-slider" min="1990" max="2025" step="1" value="2000">
+        <button id="play-button">▶ Play</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // --------------------------
+  // Global Variables
+  // --------------------------
+  let data = [];
+  let dataByYear = new Map(); // year -> array of rows
+  let currentYear = 2000;
+  let isPlaying = false;
+  let playInterval = null;
+
+  // We fix xAxis = floor_area_sqm, yAxis = resale_price
+  const xVar = 'floor_area_sqm';
+  const yVar = 'resale_price';
+  // We'll color by remaining_lease_year (dimension index 2 in the data array for ECharts)
+  const colorVar = 'remaining_lease_year';
+
+  // For global axis ranges
+  let globalExtents = {
+    floor_area_sqm: null,
+    resale_price: null
+  };
+
+  // Filter sets
+  const filters = {
+    towns: new Set(),
+    flatTypes: new Set(),
+    storeyRanges: new Set()
+  };
+
+  // ECharts instance
+  let chart;
+
+  // --------------------------
+  // Load Data
+  // --------------------------
+  d3.csv('data/combined_hdb_resale_data.csv').then(csvData => {
+    data = csvData.map(d => ({
+      ...d,
+      year: +d.year,
+      month_num: +d.month_num,
+      floor_area_sqm: +d.floor_area_sqm,
+      lease_commence_date: +d.lease_commence_date,
+      remaining_lease_year: +d.remaining_lease_year,
+      resale_price: +d.resale_price
+    }));
+
+    console.log(`Loaded ${data.length} rows`);
+
+    // Build year->rows cache
+    const grouped = d3.group(data, row => row.year);
+    grouped.forEach((arr, yr) => {
+      dataByYear.set(+yr, arr);
+    });
+
+    // Compute global extents for floor_area_sqm and resale_price
+    const faExtent = d3.extent(data, d => d.floor_area_sqm);
+    const rpExtent = d3.extent(data, d => d.resale_price);
+    globalExtents.floor_area_sqm = faExtent;
+    globalExtents.resale_price = rpExtent;
+
+    initFilters();
+    populatePredictDropdowns();
+    initChart();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('chart').style.display = 'block';
+
+    updateChart(); // initial
+    setupEventListeners();
+
+  }).catch(err => {
+    console.error('Error loading CSV:', err);
+    document.getElementById('loading').textContent = 'Error loading data. Check console.';
+  });
+
+  // --------------------------
+  // Initialize & Populate Filters
+  // --------------------------
+  function initFilters() {
+    // Gather unique items
+    const towns = [...new Set(data.map(d => d.town))].sort();
+    const flatTypes = [...new Set(data.map(d => d.flat_type))].sort();
+    const storeyRanges = [...new Set(data.map(d => d.storey_range))].sort();
+
+    towns.forEach(t => filters.towns.add(t));
+    flatTypes.forEach(f => filters.flatTypes.add(f));
+    storeyRanges.forEach(s => filters.storeyRanges.add(s));
+
+    populateCheckboxes('town-filters', towns, 'town');
+    populateCheckboxes('flat-type-filters', flatTypes, 'flat-type');
+    populateCheckboxes('storey-filters', storeyRanges, 'storey');
+  }
+
+  function populateCheckboxes(containerId, items, filterType) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    items.forEach(item => {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = item;
+      cb.checked = true;
+      cb.dataset.filterType = filterType;
+      cb.addEventListener('change', () => {
+        updateFilterState(cb);
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + item));
+      container.appendChild(label);
+    });
+  }
+
+  function updateFilterState(checkbox) {
+    const { value } = checkbox;
+    const type = checkbox.dataset.filterType;
+    if (type === 'town') {
+      checkbox.checked ? filters.towns.add(value) : filters.towns.delete(value);
+    } else if (type === 'flat-type') {
+      checkbox.checked ? filters.flatTypes.add(value) : filters.flatTypes.delete(value);
+    } else if (type === 'storey') {
+      checkbox.checked ? filters.storeyRanges.add(value) : filters.storeyRanges.delete(value);
+    }
+    updateChart();
+  }
+
+  function selectAll(filterType, isSelected) {
+    const cbs = document.querySelectorAll(`input[data-filter-type="${filterType}"]`);
+    cbs.forEach(cb => {
+      cb.checked = isSelected;
+      updateFilterState(cb);
+    });
+  }
+
+  // --------------------------
+  // Populate Predict Price Dropdowns
+  // --------------------------
+  function populatePredictDropdowns() {
+    const uniqueTowns = [...new Set(data.map(d => d.town))].sort();
+    const uniqueFlats = [...new Set(data.map(d => d.flat_type))].sort();
+
+    const townSelect = document.getElementById('predict-town');
+    const flatSelect = document.getElementById('predict-flat-type');
+
+    uniqueTowns.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = t;
+      townSelect.appendChild(opt);
+    });
+    uniqueFlats.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = f;
+      flatSelect.appendChild(opt);
+    });
+  }
+
+  // --------------------------
+  // Initialize ECharts
+  // --------------------------
+  function initChart() {
+    chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
+
+    const option = {
+      title: {
+        text: 'HDB Resale Prices',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'item',
+        formatter: params => {
+          // If it's the scatter:
+          if (params.seriesName === 'Flats') {
+            const d = params.data;
+            // d = [ xVal, yVal, remainLease, resale, town, flatType, storey, year ]
+            return `
+              <strong>Town:</strong> ${d[4]}<br/>
+              <strong>Flat Type:</strong> ${d[5]}<br/>
+              <strong>Storey:</strong> ${d[6]}<br/>
+              <strong>Floor Area:</strong> ${d[0]} sqm<br/>
+              <strong>Remaining Lease:</strong> ${d[2]} yrs<br/>
+              <strong>Resale Price:</strong> $${d[3].toLocaleString()}<br/>
+              <strong>Year:</strong> ${d[7]}
+            `;
+          } 
+          else if (params.seriesName === 'Regression') {
+            // It's the polynomial line
+            // point data might be [xVal, predictedPrice]
+            const [xx, yy] = params.data;
+            return `Floor Area: ${xx.toFixed(1)} sqm<br/>Predicted Price: $${Math.round(yy).toLocaleString()}`;
+          }
+          return params.name;
+        }
+      },
+      xAxis: {
+        name: 'Floor Area (sqm)',
+        min: globalExtents.floor_area_sqm[0],
+        max: globalExtents.floor_area_sqm[1]
+      },
+      yAxis: {
+        name: 'Resale Price (SGD)',
+        min: globalExtents.resale_price[0],
+        max: globalExtents.resale_price[1]
+      },
+      visualMap: {
+        show: true,
+        // We store [0]=x, [1]=y, [2]=remaining_lease, [3]=price...
+        dimension: 2, 
+        min: d3.min(data, d => d.remaining_lease_year),
+        max: d3.max(data, d => d.remaining_lease_year),
+        calculable: true,
+        inRange: {
+          color: ['red','green']
+        },
+        text: ['Long Lease','Short Lease'],
+        textGap: 20,
+        left: 'right',
+        top: 'middle',
+        orient: 'vertical'
+      },
+      series: [
+        {
+          name: 'Flats',
+          type: 'scatter',
+          symbolSize: 5,
+          data: [],
+          progressive: 5000
+        },
+        {
+          name: 'Regression',
+          type: 'line',
+          symbolSize: 3,
+          showSymbol: true,
+          data: [],
+          smooth: false,    // We'll do explicit polynomial sample points, no internal smoothing
+          lineStyle: {
+            color: '#111'
+          }
+        }
+      ]
+    };
+
+    chart.setOption(option);
+    window.addEventListener('resize', () => chart.resize());
+  }
+
+  // --------------------------
+  // Update Chart
+  // --------------------------
+  function updateChart() {
+    // 1) Filter data by currentYear (dataByYear) + the sets
+    const yearData = dataByYear.get(currentYear) || [];
+    const filtered = yearData.filter(d => {
+      return (
+        filters.towns.has(d.town) &&
+        filters.flatTypes.has(d.flat_type) &&
+        filters.storeyRanges.has(d.storey_range)
+      );
+    });
+
+    // 2) Build scatter data array:
+    //    [ floor_area, resale_price, remaining_lease, resale_price, town, flatType, storey, year ]
+    const scatterData = filtered.map(d => ([
+      d.floor_area_sqm,
+      d.resale_price,
+      d.remaining_lease_year,
+      d.resale_price,
+      d.town,
+      d.flat_type,
+      d.storey_range,
+      d.year
+    ]));
+
+    // 3) Polynomial regression (degree 5) on X=floor_area, Y=resale_price
+    //    We'll skip if fewer than 6 points or if all x are identical, etc.
+    let regressionSeries = [];
+    if (scatterData.length >= 6) {
+      // Gather x,y
+      const xy = scatterData.map(dd => [dd[0], dd[1]]);
+      // Fit polynomial => returns [a0, a1, a2, a3, a4, a5] for P(x)=a0 + a1x + ...
+      const coefs = fitPolynomial(xy, 3);
+      // Then sample from minX..maxX in ~100 steps
+      const [minX, maxX] = d3.extent(xy, r => r[0]);
+      const step = (maxX - minX) / 99;
+      for (let i=0; i<100; i++) {
+        const xVal = minX + step*i;
+        const yPred = evaluatePolynomial(coefs, xVal);
+        regressionSeries.push([xVal, yPred]);
+      }
+    }
+
+    // 4) Update ECharts
+    chart.setOption({
+      title: {
+        text: `HDB Resale Prices in ${currentYear}`
+      },
+      series: [
+        {
+          name: 'Flats',
+          type: 'scatter',
+          data: scatterData
+        },
+        {
+          name: 'Regression',
+          type: 'line',
+          data: regressionSeries
+        }
+      ]
+    });
+    chart.resize();
+  }
+
+  // --------------------------
+  // Polynomial Regression (Degree d)
+  //  - naive Vandermonde approach
+  //  - returns coefficient array c[], c[0]..c[d]
+  //  so P(x) = c[0] + c[1]*x + c[2]*x^2 + ...
+  // --------------------------
+  function fitPolynomial(xyArray, degree=5) {
+    // Build Vandermonde matrix: M(i,j) = x_i^j,  i=0..n-1, j=0..d
+    // Build vector Y of y_i
+    // Solve M*C = Y in least squares sense => C = (M^T M)^-1 (M^T Y)
+
+    const n = xyArray.length;
+    const d = degree;
+    // M is n x (d+1), Y is n x 1
+    const M = Array(n).fill(null).map(() => Array(d+1).fill(0));
+    const Y = Array(n).fill(0);
+
+    for (let i=0; i<n; i++) {
+      const [xx, yy] = xyArray[i];
+      Y[i] = yy;
+      let power = 1;
+      for (let j=0; j<=d; j++) {
+        M[i][j] = power;
+        power *= xx;
+      }
+    }
+
+    // Now compute M^T M and M^T Y
+    const MT = transpose(M);
+    const MTM = multiply(MT, M);  // (d+1)x(d+1)
+    const MTY = multiplyVec(MT, Y); // (d+1)x1
+
+    // Solve for C in MTM*C = MTY
+    // We'll do a simple matrix inversion or a basic Gaussian elimination
+    const C = solve(MTM, MTY); // array of length (d+1)
+    return C;
+  }
+
+  function evaluatePolynomial(coefs, xVal) {
+    let res = 0;
+    let pow = 1;
+    for (let i=0; i<coefs.length; i++) {
+      res += coefs[i] * pow;
+      pow *= xVal;
+    }
+    return res;
+  }
+
+  // --------------------------
+  // Minimal Linear Algebra Helpers
+  //  - transpose
+  //  - multiply (mat x mat)
+  //  - multiplyVec (mat x vec)
+  //  - solve(A,b) => solves A*x=b for x, using naive Gaussian elimination
+  // --------------------------
+  function transpose(mat) {
+    const rows = mat.length, cols = mat[0].length;
+    const out = Array(cols).fill(null).map(()=>Array(rows));
+    for (let r=0; r<rows; r++){
+      for (let c=0; c<cols; c++){
+        out[c][r] = mat[r][c];
+      }
+    }
+    return out;
+  }
+
+  function multiply(A, B) {
+    // A is (m x n), B is (n x p) => result (m x p)
+    const m = A.length, n = A[0].length, p = B[0].length;
+    const result = Array(m).fill(null).map(()=>Array(p).fill(0));
+    for(let i=0; i<m; i++){
+      for(let j=0; j<p; j++){
+        let sum = 0;
+        for(let k=0; k<n; k++){
+          sum += A[i][k]*B[k][j];
+        }
+        result[i][j] = sum;
+      }
+    }
+    return result;
+  }
+
+  function multiplyVec(A, v) {
+    // A is (m x n), v is length n => out length m
+    const m = A.length, n = A[0].length;
+    const result = Array(m).fill(0);
+    for(let i=0; i<m; i++){
+      let sum = 0;
+      for(let j=0; j<n; j++){
+        sum += A[i][j]*v[j];
+      }
+      result[i] = sum;
+    }
+    return result;
+  }
+
+  function solve(A, b) {
+    // Solve A*x = b by naive Gaussian elimination
+    // A is NxN, b is Nx1
+    const n = A.length;
+    // clone A, b to not mutate
+    const M = A.map(row => row.slice());
+    const bb = b.slice();
+
+    // Forward elimination
+    for (let i=0; i<n; i++){
+      // pivot
+      let maxRow = i;
+      let maxVal = Math.abs(M[i][i]);
+      for (let r=i+1; r<n; r++){
+        const val = Math.abs(M[r][i]);
+        if (val>maxVal){ maxVal=val; maxRow=r; }
+      }
+      if (maxRow!==i){
+        // swap rows i <-> maxRow
+        [M[i], M[maxRow]] = [M[maxRow], M[i]];
+        [bb[i], bb[maxRow]] = [bb[maxRow], bb[i]];
+      }
+      // eliminate below
+      for (let r=i+1; r<n; r++){
+        const ratio = M[r][i]/M[i][i];
+        for (let c=i; c<n; c++){
+          M[r][c] -= ratio*M[i][c];
+        }
+        bb[r] -= ratio*bb[i];
+      }
+    }
+    // Back substitution
+    const x = Array(n).fill(0);
+    for (let i=n-1; i>=0; i--){
+      let sum = bb[i];
+      for (let c=i+1; c<n; c++){
+        sum -= M[i][c]*x[c];
+      }
+      x[i] = sum/M[i][i];
+    }
+    return x;
+  }
+
+  // --------------------------
+  // Event Listeners
+  // --------------------------
+  function setupEventListeners() {
+    // Slider
+    const slider = document.getElementById('year-slider');
+    const yearValue = document.getElementById('year-value');
+    slider.addEventListener('input', function() {
+      currentYear = +this.value;
+      yearValue.textContent = currentYear;
+      updateChart();
+    });
+
+    // Play button
+    const playBtn = document.getElementById('play-button');
+    playBtn.addEventListener('click', () => {
+      if (isPlaying) {
+        clearInterval(playInterval);
+        isPlaying = false;
+        playBtn.textContent = '▶ Play';
+      } else {
+        isPlaying = true;
+        playBtn.textContent = '⏸ Pause';
+        const minYr = +slider.min;
+        const maxYr = +slider.max;
+        playInterval = setInterval(() => {
+          if (currentYear >= maxYr) {
+            currentYear = minYr;
+          } else {
+            currentYear++;
+          }
+          slider.value = currentYear;
+          yearValue.textContent = currentYear;
+          updateChart();
+        }, 800);
+      }
+    });
+
+    // Filter buttons
+    document.getElementById('select-all-flat-types')
+      .addEventListener('click', () => selectAll('flat-type', true));
+    document.getElementById('clear-all-flat-types')
+      .addEventListener('click', () => selectAll('flat-type', false));
+    document.getElementById('select-all-towns')
+      .addEventListener('click', () => selectAll('town', true));
+    document.getElementById('clear-all-towns')
+      .addEventListener('click', () => selectAll('town', false));
+    document.getElementById('select-all-storeys')
+      .addEventListener('click', () => selectAll('storey', true));
+    document.getElementById('clear-all-storeys')
+      .addEventListener('click', () => selectAll('storey', false));
+
+    // Predict button
+    document.getElementById('predict-button').addEventListener('click', () => {
+      const twn = document.getElementById('predict-town').value;
+      const ft = document.getElementById('predict-flat-type').value;
+      const fa = +document.getElementById('predict-floor-area').value;
+      const rl = +document.getElementById('predict-lease-years').value;
+
+      const resultDiv = document.getElementById('predict-result');
+      if (!twn || !ft || fa<=0 || rl<=0) {
+        resultDiv.textContent = 'Please fill all inputs properly.';
+        return;
+      }
+
+      // 1) Filter entire data for matching (town, flat_type) exactly
+      // 2) floor_area ~±10%, remaining_lease ~±10%
+      const faLow = fa*0.9, faHigh=fa*1.1;
+      const rlLow = rl*0.9, rlHigh=rl*1.1;
+
+      const candidates = data.filter(d => {
+        if (d.town!==twn) return false;
+        if (d.flat_type!==ft) return false;
+        if (d.floor_area_sqm<faLow || d.floor_area_sqm>faHigh) return false;
+        if (d.remaining_lease_year<rlLow || d.remaining_lease_year>rlHigh) return false;
+        return true;
+      });
+
+      if (candidates.length===0) {
+        resultDiv.textContent = 'No matching transactions.';
+        return;
+      }
+
+      // Mean & Median
+      const prices = candidates.map(c => c.resale_price).sort((a,b)=>a-b);
+      const mean = prices.reduce((a,b)=>a+b,0)/prices.length;
+      let median;
+      const mid = Math.floor(prices.length/2);
+      if (prices.length%2===0) {
+        median = (prices[mid-1]+prices[mid])/2;
+      } else {
+        median = prices[mid];
+      }
+
+      resultDiv.innerHTML = `
+        Found <strong>${candidates.length}</strong> matches.<br/>
+        Mean Price: $${Math.round(mean).toLocaleString()}<br/>
+        Median Price: $${Math.round(median).toLocaleString()}
+      `;
+    });
+  }
+</script>
+</body>
+</html>
