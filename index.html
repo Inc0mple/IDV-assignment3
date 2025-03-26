@@ -299,6 +299,31 @@
       margin: 5px 0;
       line-height: 1.5;
     }
+
+    .hypothesis, .findings {
+      background-color: #f8f9fa;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      border-left: 4px solid #3498db;
+    }
+  
+    .hypothesis strong, .findings strong {
+      color: var(--primary-dark);
+      font-size: 1.1em;
+    }
+  
+    .hypothesis span.highlight, .findings span.highlight {
+      color: #000000;
+      font-weight: bold;
+    }
+  
+    .findings span.alert {
+      color: #e74c3c;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -313,31 +338,29 @@
     <h2>Hypothesis & Findings</h2>
 
     <div class="hypothesis">
-        <p>
-            <strong>Hypothesis 1</strong>: The average resale price of HDB flats varies distinctly
-             by flat type over the years.
-        </p>
+      <p>
+        <strong>Hypothesis 1</strong>: The average resale price of HDB flats <span class="highlight">may differ across flat types.</span>
+        We expect <span class="highlight">2-room flats</span> to generally have <span class="highlight">lower average prices</span>, followed by <span class="highlight">3-room, 4-room, 5-room, Executive,</span> and <span class="highlight">Multi-Generation flats at the highest end.</span>
+      </p>
     </div>
-
+    
     <div class="hypothesis">
-        <p>
-            <strong>Hypothesis 2</strong>: There is a polynomial relationship between floor area,
-            remaining lease duration, flat type, and resale price.
-            Specifically, we expect larger floor areas and longer remaining leases to
-            positively correlate with higher resale prices across different flat types.
-        </p>
+      <p>
+        <strong>Hypothesis 2</strong>: There may be a <span class="highlight">positive correlation between floor area (sqm) and resale price.</span>
+        In general, we expect that flats with <span class="highlight">larger floor areas</span> tend to have <span class="highlight">higher resale prices.</span>
+      </p>
     </div>
-
+    
     <div class="findings">
-        <p>
-            <strong>Findings</strong>: The interactive visualisation indicates clear patterns supporting the hypothesis.
-            Average resale prices vary significantly by flat type, with larger units 
-            (e.g., Executive and Multi-Generation flats) almost always commanding higher prices.
-            Additionally, we observed a strong positive correlation between floor area and resale price.
-            Flats with longer remaining lease durations also tend to fetch higher resale values.
-        </p>
+      <p>
+        <strong>Findings</strong>: The visualisation supports <span class="highlight">both hypotheses.</span>
+        Average resale prices appear to <span class="highlight">increase with flat type</span>, roughly in the expected order:
+        <span class="highlight">2-room flats</span> tend to be the <span class="highlight">least expensive</span>, while <span class="highlight">Executive and Multi-Generation flats</span> are generally the <span class="highlight">most costly.</span>
+        A <span class="highlight">positive correlation</span> between <span class="highlight">floor area and resale price</span> is also observable.
+        Additionally, flats with <span class="highlight">longer remaining lease durations</span> often show <span class="highlight">higher resale values.</span>
+        This is most evident in <span class="highlight">2024</span>, where <span class="alert">redder points (indicating shorter remaining leases)</span> tend to be lower on the y-axis.
+      </p>
     </div>
-</div>
 
   <div class="main-content">
     <!-- VISUALIZATION (Scatter + Regression + below line chart) -->
@@ -636,8 +659,10 @@ function initChart() {
       nameLocation: 'middle',
       nameGap: 30,
       nameTextStyle: { fontSize:14, fontWeight:'bold' },
-      min: globalExtents.floor_area_sqm[0],
-      max: globalExtents.floor_area_sqm[1],
+      // min: globalExtents.floor_area_sqm[0],
+      min: 0,
+      max: 200,
+      // max: globalExtents.floor_area_sqm[1],
       axisLine: { lineStyle:{ color:'#666' }},
       splitLine: { lineStyle:{ color:'#eee' }}
     },
@@ -647,7 +672,8 @@ function initChart() {
       // Increase nameGap so label doesn't overlap tick labels
       nameGap: 60,
       nameTextStyle: { fontSize:14, fontWeight:'bold' },
-      min: globalExtents.resale_price[0],
+      // min: globalExtents.resale_price[0],
+      min: 0,
       max: globalExtents.resale_price[1],
       axisLine: { lineStyle:{ color:'#666' }},
       splitLine: { lineStyle:{ color:'#eee' }}
